@@ -82,7 +82,7 @@ function draw(){ctx.fillStyle='#080e1a';ctx.fillRect(0,0,W,H);
  for(const s of foeShots){ctx.shadowColor='#ffad55';ctx.shadowBlur=9;rect(s.x-camera-4,s.y-4,8,8,'#ffc46c');}ctx.shadowBlur=0;
  for(const s of sparks){ctx.globalAlpha=clamp(s.t/.45,0,1);rect(s.x-camera,s.y,4,4,'#72ffd0');}ctx.globalAlpha=1;
  // Pixel hero: green body, bright visor and tiny boots.
- if(player&&(player.inv<=0||Math.floor(performance.now()/90)%2===0)){const x=player.x-camera,y=player.y;ctx.shadowColor='#4bffc2';ctx.shadowBlur=18;rect(x+5,y+4,15,20,'#50f5bd');rect(x+(player.face>0?15:5),y+8,7,5,'#eafff7');ctx.shadowBlur=0;rect(x+3,y+24,7,8,'#baffdf');rect(x+15,y+24,7,8,'#baffdf');rect(x+(player.face>0?20:0),y+15,5,4,'#29b990');}
+ if(player&&(player.inv<=0||Math.floor(performance.now()/90)%2===0)){const x=player.x-camera,y=player.y;ctx.shadowColor='#55ff26';ctx.shadowBlur=18;rect(x+4,y+7,17,17,'#55ff26');ctx.shadowBlur=0;rect(x+(player.face>0?16:6),y+11,4,4,'#eaffd2');}
  // Checkpoint flags and finish beacon
  for(const c of checkpoints){const x=c-camera;if(x>-20&&x<W+20){rect(x,GROUND-88,4,88,'#88a2b7');rect(x+4,GROUND-86,22,14,lastCheckpoint===c?'#55f0b5':'#42647a');}}
  const goal=END-camera;rect(goal,GROUND-125,8,125,'#d2ff80');rect(goal+8,GROUND-125,33,23,'#aaff7a');
