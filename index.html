@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>The Last Green Pixel — Side Scroller</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#080d16;color:#e9f4ff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;overscroll-behavior:none}body{display:grid;place-items:center;padding:12px}#game{width:min(1000px,100%);background:#0c1321;border:1px solid #33465d;border-radius:17px;overflow:hidden;box-shadow:0 15px 65px #000a}header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 17px;background:#121e30;border-bottom:1px solid #344258}header strong{font-size:clamp(15px,2.5vw,22px);letter-spacing:.12em;color:#b9ffe2}header small{display:block;color:#91a8c2;font-size:10px;margin-top:2px;letter-spacing:.14em}.hud{display:flex;gap:clamp(8px,2vw,22px);align-items:center}.stat{text-align:center;min-width:42px}.stat span{font-size:9px;letter-spacing:.09em;color:#9db1c9}.stat b{display:block;font-size:clamp(17px,2.7vw,23px);font-variant-numeric:tabular-nums}.enemy{color:#ff596d}.life{color:#5df9be}canvas{display:block;width:100%;aspect-ratio:16/9;background:#070b12;touch-action:none}#bottom{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 15px;background:#121e30;border-top:1px solid #344258}#bottom p{margin:0;color:#adc0d5;font-size:11px;line-height:1.45}button{border:1px solid #5b7e8d;background:#263d4b;color:#f1fbff;border-radius:9px;padding:10px 13px;font-weight:700;cursor:pointer;touch-action:none;user-select:none}button:active{transform:scale(.96)}button.main{background:#42d7a0;color:#061511;border-color:#42d7a0}.controls{display:flex;gap:7px;align-items:center}.controls button{min-width:50px;height:49px;font-size:14px}.controls .fire{background:#624134;border-color:#d98c58;color:#fff0d7}.credits{font-size:10px;letter-spacing:.12em;color:#6f859e;padding:0 15px 9px;background:#121e30}@media(max-width:620px){body{padding:0}#game{border:0;border-radius:0}header{padding:9px}.stat span{font-size:8px}.hud{gap:6px}#bottom{padding:8px}#bottom p{max-width:180px;font-size:10px}.controls{gap:5px}.controls button{min-width:43px;height:45px;padding:5px}.credits{padding-bottom:7px}}
+</style>
+</head>
+<body><main id="game">
+<header><div><strong>THE LAST GREEN PIXEL</strong><small>SIDE SCROLLER · ONE LONG RUN</small></div><div class="hud"><div class="stat"><span>SECTOR</span><b id="sector">01</b></div><div class="stat"><span>ENEMIES</span><b id="enemies" class="enemy">0</b></div><div class="stat"><span>LIVES</span><b id="lives" class="life">♥♥♥</b></div></div></header>
+<canvas id="screen" width="960" height="540" aria-label="The Last Green Pixel side-scrolling game"></canvas>
+<div id="bottom"><p>Beweeg: A/D · Q/D · ←/→<br>Spring: W/Z/↑/spatie · Schiet: X/J</p><div class="controls"><button id="left" aria-label="Naar links">◀</button><button id="right" aria-label="Naar rechts">▶</button><button id="jump" aria-label="Spring">JUMP</button><button class="fire" id="fire" aria-label="Schiet">FIRE</button></div><button class="main" id="action">START RUN</button></div>
+<div class="credits">TEEKAY & OMNIA 2026 · EVERY PIXEL COUNTS</div></main>
+<script>
+(()=>{'use strict';
+const canvas=document.getElementById('screen'),ctx=canvas.getContext('2d'),W=960,H=540,GROUND=466,END=14800;
+const ui={sector:document.getElementById('sector'),enemies:document.getElementById('enemies'),lives:document.getElementById('lives'),action:document.getElementById('action')};
+const keys={left:false,right:false,jump:false,fire:false};let state='intro',camera=0,last=0,player,shots=[],foeShots=[],enemies=[],sparks=[],platforms=[],crates=[],pits=[],checkpoints=[],lastCheckpoint=80,score=0,notice='',noticeT=0;
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+// The route is built as ten readable sectors: ground, raised paths, gaps and cover.
+function buildWorld(){platforms=[];crates=[];pits=[];checkpoints=[];
+ for(let i=0;i<10;i++){
+  const start=250+i*1420;
+  const gapX=start+840+(i%2)*70,gapW=112+(i%3)*12;pits.push({x:gapX,w:gapW});
+  platforms.push({x:start+260,y:GROUND-78-(i%3)*16,w:150,h:18},{x:start+500,y:GROUND-132+(i%2)*8,w:132,h:18},{x:gapX+20,y:GROUND-62,w:gapW+85,h:18},{x:start+1110,y:GROUND-88-(i%2)*24,w:176,h:18});
+  crates.push({x:start+390,y:GROUND-34,w:34,h:34},{x:start+1010,y:GROUND-40,w:40,h:40});
+  if(i>0)checkpoints.push(start+40);
+ }
+}
+function terrainAt(x){return !pits.some(p=>x>p.x&&x<p.x+p.w)}
+function solidRects(){return platforms.concat(crates)}
+function collidesRect(x,y,w,h,r){return solidRects().some(o=>x+w>o.x-r&&x<o.x+o.w+r&&y+h>o.y-r&&y<o.y+o.h+r)}
+function makeEnemies(){enemies=[];for(let i=0;i<30;i++){
+ const x=470+i*475+(i%3)*75;
+ const elevated=i%4===2;const py=elevated?GROUND-95-(i%2)*45:GROUND-28;
+ enemies.push({x,y:py,w:26,h:28,baseX:x,range:95+(i%4)*16,dir:i%2?1:-1,speed:30+(i%4)*7,hp:i%6===5?2:1,shot:1.3+(i%5)*.35,alive:true,type:i%5===4?'heavy':'drone'});
+ }}
+function fresh(){player={x:80,y:GROUND-34,w:24,h:32,vx:0,vy:0,hp:3,face:1,ground:true,inv:0};shots=[];foeShots=[];sparks=[];camera=0;lastCheckpoint=80;score=0;buildWorld();makeEnemies();state='playing';ui.action.textContent='RESTART';notice='RUN!';noticeT=1.1;updateHud();}
+function updateHud(){ui.sector.textContent=String(clamp(Math.floor(player.x/1420)+1,1,10)).padStart(2,'0');ui.enemies.textContent=enemies.filter(e=>e.alive).length;ui.lives.textContent='♥'.repeat(player.hp)+'♡'.repeat(3-player.hp);}
+function hurt(){if(player.inv>0)return;player.hp--;player.inv=1.35;player.vy=-190;if(player.hp<=0){state='gameover';ui.action.textContent='TRY AGAIN';}updateHud();}
+function jump(){if(state==='playing'&&player.ground){player.vy=-470;player.ground=false;}}
+function fire(){if(state!=='playing'||player.shotCooldown>0)return;shots.push({x:player.x+(player.face>0?player.w:0),y:player.y+13,vx:player.face*570,life:1.6});player.shotCooldown=.24;}
+function update(dt){if(state!=='playing')return;
+ player.inv=Math.max(0,player.inv-dt);player.shotCooldown=Math.max(0,(player.shotCooldown||0)-dt);
+ const dir=(keys.right?1:0)-(keys.left?1:0);if(dir){player.face=dir;player.vx=dir*230;}else player.vx*=Math.pow(.001,dt);
+ const oldX=player.x;player.x=clamp(player.x+player.vx*dt,0,END-30);
+ // Keep the runner out of crates while preserving side-scrolling momentum.
+ if(collidesRect(player.x,player.y,player.w,player.h,0)){player.x=oldX;player.vx=0;}
+ if(keys.jump){jump();keys.jump=false;}if(keys.fire)fire();
+ player.vy=Math.min(700,player.vy+1100*dt);const oldY=player.y;player.y+=player.vy*dt;player.ground=false;
+ if(player.vy>=0){
+  let landing=null;if(terrainAt(player.x+player.w*.5)&&oldY+player.h<=GROUND+2&&player.y+player.h>=GROUND)landing=GROUND;
+  for(const p of platforms)if(player.x+player.w>p.x&&player.x<p.x+p.w&&oldY+player.h<=p.y&&player.y+player.h>=p.y&&(!landing||p.y<landing))landing=p.y;
+  if(landing!==null){player.y=landing-player.h;player.vy=0;player.ground=true;}
+ }
+ if(player.y>H+100){player.hp--;player.x=lastCheckpoint;player.y=GROUND-player.h-5;player.vy=0;player.inv=1.5;notice='TERUG NAAR CHECKPOINT';noticeT=1.4;if(player.hp<=0){state='gameover';ui.action.textContent='TRY AGAIN';}}
+ for(const c of checkpoints)if(player.x>c&&lastCheckpoint<c){lastCheckpoint=c;notice='CHECKPOINT';noticeT=1.5;}
+ for(const e of enemies){if(!e.alive)continue;e.x+=e.dir*e.speed*dt;if(Math.abs(e.x-e.baseX)>e.range)e.dir*=-1;
+  e.shot-=dt;if(e.shot<=0&&Math.abs(e.x-player.x)<590){const dx=player.x-(e.x+e.w/2),dy=player.y+12-(e.y+12),d=Math.hypot(dx,dy)||1;foeShots.push({x:e.x+e.w/2,y:e.y+12,vx:dx/d*165,vy:dy/d*165,life:5});e.shot=2.1+(Math.random()*.9);}
+  if(player.inv<=0&&player.x+player.w>e.x&&player.x<e.x+e.w&&player.y+player.h>e.y&&player.y<e.y+e.h){hurt();}
+ }
+ for(let i=shots.length-1;i>=0;i--){const s=shots[i];s.x+=s.vx*dt;s.life-=dt;let remove=s.life<=0||s.x<camera-20||s.x>camera+W+20;
+  if(!remove)for(const e of enemies)if(e.alive&&s.x>e.x&&s.x<e.x+e.w&&s.y>e.y&&s.y<e.y+e.h){e.hp--;remove=true;if(e.hp<=0){e.alive=false;score+=100;for(let n=0;n<7;n++)sparks.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*150,vy:(Math.random()-.7)*150,t:.45});}break;}
+  if(remove)shots.splice(i,1);
+ }
+ for(let i=foeShots.length-1;i>=0;i--){const s=foeShots[i];s.x+=s.vx*dt;s.y+=s.vy*dt;s.life-=dt;if(s.life<=0||s.x<camera-20||s.x>camera+W+20||s.y>H||s.y<0){foeShots.splice(i,1);continue;}if(player.inv<=0&&s.x>player.x&&s.x<player.x+player.w&&s.y>player.y&&s.y<player.y+player.h){foeShots.splice(i,1);hurt();}}
+ for(let i=sparks.length-1;i>=0;i--){sparks[i].x+=sparks[i].vx*dt;sparks[i].y+=sparks[i].vy*dt;sparks[i].t-=dt;if(sparks[i].t<=0)sparks.splice(i,1);}
+ camera=clamp(player.x-W*.34,0,END-W);noticeT=Math.max(0,noticeT-dt);if(player.x>=END-45){state='victory';ui.action.textContent='PLAY AGAIN';}updateHud();
+}
+function rect(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
+function draw(){ctx.fillStyle='#080e1a';ctx.fillRect(0,0,W,H);
+ // Distant parallax skyline and the green horizon shift as the player advances.
+ const par=camera*.16;for(let i=0;i<18;i++){let x=((i*96-par)%(W+100)+(W+100))%(W+100)-50;let h=75+(i*37%115);rect(x,GROUND-h,54,h,'#111d2a');rect(x+8,GROUND-h+15,5,7,'#24483e');rect(x+29,GROUND-h+35,5,7,'#24483e');}
+ rect(0,GROUND,W,H-GROUND,'#15231f');rect(0,GROUND,W,5,'#58d49b');
+ // Striped course floor
+ for(let x=Math.floor(camera/32)*32;x<camera+W+32;x+=32){const sx=x-camera;rect(sx,GROUND+12,18,3,'#294237');}
+ for(const p of pits){const x=p.x-camera;if(x<W&&x+p.w>0){rect(x,GROUND,p.w,H-GROUND,'#03060b');rect(x,GROUND,p.w,5,'#ff556a');for(let a=10;a<p.w;a+=24){ctx.fillStyle='#ff5265';ctx.beginPath();ctx.moveTo(x+a,GROUND+8);ctx.lineTo(x+a+10,GROUND+32);ctx.lineTo(x+a-5,GROUND+32);ctx.fill();}}}
+ for(const o of crates.concat(platforms)){const x=o.x-camera;if(x<-200||x>W+100)continue;rect(x,o.y,o.w,o.h,o.h>25?'#445468':'#40586a');rect(x+3,o.y+3,o.w-6,4,o.h>25?'#71879a':'#80a0b2');if(o.h>25){ctx.strokeStyle='#71889b';ctx.strokeRect(x+.5,o.y+.5,o.w-1,o.h-1);}}
+ for(const e of enemies){if(!e.alive)continue;const x=e.x-camera;if(x<-50||x>W+50)continue;ctx.shadowColor=e.type==='heavy'?'#ff8f47':'#ff4159';ctx.shadowBlur=13;rect(x,e.y,e.w,e.h,e.type==='heavy'?'#ff754c':'#ef425c');ctx.shadowBlur=0;rect(x+5,e.y+7,5,5,'#fff0d8');rect(x+16,e.y+7,5,5,'#fff0d8');rect(x+7,e.y+21,e.w-14,3,'#651e35');if(e.hp>1){rect(x+4,e.y-6,18,3,'#ffb24a');}}
+ for(const s of shots){ctx.shadowColor='#83ffe0';ctx.shadowBlur=12;rect(s.x-camera-5,s.y-3,11,6,'#aaffea');}ctx.shadowBlur=0;
+ for(const s of foeShots){ctx.shadowColor='#ffad55';ctx.shadowBlur=9;rect(s.x-camera-4,s.y-4,8,8,'#ffc46c');}ctx.shadowBlur=0;
+ for(const s of sparks){ctx.globalAlpha=clamp(s.t/.45,0,1);rect(s.x-camera,s.y,4,4,'#72ffd0');}ctx.globalAlpha=1;
+ // Pixel hero: green body, bright visor and tiny boots.
+ if(player&&(player.inv<=0||Math.floor(performance.now()/90)%2===0)){const x=player.x-camera,y=player.y;ctx.shadowColor='#4bffc2';ctx.shadowBlur=18;rect(x+5,y+4,15,20,'#50f5bd');rect(x+(player.face>0?15:5),y+8,7,5,'#eafff7');ctx.shadowBlur=0;rect(x+3,y+24,7,8,'#baffdf');rect(x+15,y+24,7,8,'#baffdf');rect(x+(player.face>0?20:0),y+15,5,4,'#29b990');}
+ // Checkpoint flags and finish beacon
+ for(const c of checkpoints){const x=c-camera;if(x>-20&&x<W+20){rect(x,GROUND-88,4,88,'#88a2b7');rect(x+4,GROUND-86,22,14,lastCheckpoint===c?'#55f0b5':'#42647a');}}
+ const goal=END-camera;rect(goal,GROUND-125,8,125,'#d2ff80');rect(goal+8,GROUND-125,33,23,'#aaff7a');
+ // Progress bar
+ rect(20,18,W-40,5,'#21344a');rect(20,18,(W-40)*player.x/END,5,'#55e8b2');
+ if(state!=='playing'){ctx.fillStyle='#03070dd9';ctx.fillRect(0,0,W,H);ctx.textAlign='center';ctx.textBaseline='middle';let title,line,color='#74ffd0';if(state==='intro'){title='THE LAST GREEN PIXEL';line='REN NAAR RECHTS · SPRING · SCHIET';}if(state==='gameover'){title='GAME OVER';line='JE HAALT DE CHECKPOINT NOG WEL';color='#ff6576';}if(state==='victory'){title='DE LAATSTE PIXEL IS GERED';line='HEEL HET PARCOURS GEHAALD · SCORE '+score;}
+ ctx.shadowColor=color;ctx.shadowBlur=18;ctx.fillStyle=color;ctx.font='bold 34px monospace';ctx.fillText(title,W/2,H/2-30);ctx.shadowBlur=0;ctx.fillStyle='#d1deeb';ctx.font='17px monospace';ctx.fillText(line,W/2,H/2+18);ctx.fillStyle='#8ca5bc';ctx.font='13px monospace';ctx.fillText('DRUK OP START RUN',W/2,H/2+57);}
+ else if(noticeT>0){ctx.textAlign='center';ctx.font='bold 17px monospace';ctx.fillStyle='#b9ffe2';ctx.fillText(notice,W/2,82);}
+}
+function loop(ts){const dt=Math.min((ts-last)/1000||0,.033);last=ts;update(dt);draw();requestAnimationFrame(loop);}requestAnimationFrame(loop);
+ui.action.addEventListener('click',()=>fresh());
+const map={ArrowLeft:'left',KeyA:'left',KeyQ:'left',ArrowRight:'right',KeyD:'right',Space:'jump',ArrowUp:'jump',KeyW:'jump',KeyZ:'jump',KeyX:'fire',KeyJ:'fire'};
+addEventListener('keydown',e=>{const k=map[e.code];if(k){e.preventDefault();keys[k]=true;}if((e.code==='Enter')&&state!=='playing')fresh();});addEventListener('keyup',e=>{const k=map[e.code];if(k){e.preventDefault();keys[k]=false;}});addEventListener('blur',()=>Object.keys(keys).forEach(k=>keys[k]=false));
+function bind(id,key){const b=document.getElementById(id);b.addEventListener('pointerdown',e=>{e.preventDefault();keys[key]=true;b.setPointerCapture(e.pointerId);if(key==='jump')jump();if(key==='fire')fire();});for(const ev of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(ev,()=>keys[key]=false);}
+bind('left','left');bind('right','right');bind('jump','jump');bind('fire','fire');
+player={x:80,y:GROUND-34,w:24,h:32,vx:0,vy:0,hp:3,face:1,ground:true,inv:0,shotCooldown:0};buildWorld();makeEnemies();draw();
+})();
+</script></body></html>
